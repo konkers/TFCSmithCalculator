@@ -28,21 +28,27 @@
             }
             #step0,
             #rststep0 {
-                width: 80px;
-                height: 80px;
+                width: 40px;
+                height: 40px;
                 border: 2px red solid;
             }
             #step1,
             #rststep1 {
-                width: 80px;
-                height: 80px;
+                width: 40px;
+                height: 40px;
                 border: 2px orangered solid;
             }
             #step2,
             #rststep2 {
-                width: 80px;
-                height: 80px;
+                width: 40px;
+                height: 40px;
                 border: 2px orange solid;
+            }
+            #path > img {
+                width: 40px;
+                height: 40px;
+                margin-right: 16px;
+                border: 2px blueviolet solid;
             }
         </style>
     </head>
@@ -60,31 +66,32 @@
         <img class="hidden" id="Any" src="./template/Any.png" />
         <canvas id="raw"></canvas> <br />
         <canvas id="dialog"></canvas> <br />
-        <canvas id="indicatorR"></canvas> <span id="rnum"></span></p><br />
+        <canvas id="indicatorR"></canvas> <span id="rnum"></span><br />
         <canvas id="indicatorG"></canvas> <span id="gnum"></span><br />
-        <canvas id="step0"></canvas> <canvas id="step1"></canvas>
-        <canvas id="step2"></canvas><br />
-        <canvas id="rststep0"></canvas> <canvas id="rststep1"></canvas>
-        <canvas id="rststep2"></canvas><br />
+        <canvas id="step0"></canvas> <canvas id="step1"></canvas> <canvas id="step2"></canvas><br />
+        <canvas id="rststep0"></canvas> <canvas id="rststep1"></canvas> <canvas id="rststep2"></canvas><br />
+        <span id="path"></span>
         <script src="https://docs.opencv.org/3.4.1/opencv.js"></script>
         <script>
-            const global_template_name_map = [
-                "Any",
-                "Bend",
-                "Draw",
-                "Hit",
-                "Punch",
-                "Shrink",
-                "Upset"
+            const global_template_name_map = ["Any", "Hit", "Draw", "Punch", "Bend", "Upset", "Shrink"];
+
+            const global_actions_name_map = ["Hit_Light", "Hit_Medium", "Hit_Heavy", "Draw", "Punch", "Bend", "Upset", "Shrink"];
+
+            const global_actions_values = [-3, -6, -9, -15, 2, 7, 13, 16];
+
+            const global_template_actions_map = [
+                [0, 1, 2, 3, 4, 5, 6, 7],
+                [0, 1, 2], // Hit
+                [3],
+                [4],
+                [5],
+                [6],
+                [7]
             ];
 
             const global_templates = [];
             for (let temp_index in global_template_name_map) {
-                temp_temp = cv.imread(
-                    document.getElementById(
-                        global_template_name_map[temp_index]
-                    )
-                );
+                temp_temp = cv.imread(document.getElementById(global_template_name_map[temp_index]));
                 let temp_gray = new cv.Mat();
                 cv.cvtColor(temp_temp, temp_gray, cv.COLOR_RGBA2GRAY);
                 global_templates.push(temp_gray);
@@ -93,16 +100,64 @@
             const getGrayDiff = function(img1, img2, temp_index) {
                 let diff = 0;
                 for (let i = 0; i < img1.data.length; i++) {
-                    diff +=
-                        (img1.data[i] - img2.data[i]) *
-                        (img1.data[i] - img2.data[i]);
-                }
-                if (temp_index == 0) {
-                    diff *= 10;
+                    diff += (img1.data[i] - img2.data[i]) * (img1.data[i] - img2.data[i]);
                 }
                 return diff;
             };
 
+            const findPath = function(start, goal, safe_range, step_request) {
+                let parents = [{ actions: [], value: parseInt(start) }];
+                let int_goal = parseInt(goal);
+
+                for (let i = 0; i < 15; i++) {
+                    console.log(i);
+                    let children = [];
+                    for (let parent_index = 0; parent_index < parents.length; parent_index++) {
+                        const parent_actions = parents[parent_index].actions;
+                        const parent_value = parents[parent_index].value;
+                        for (let child_action = 0; child_action < global_actions_values.length; child_action++) {
+                            let this_value = global_actions_values[child_action];
+                            let child_value = parent_value + global_actions_values[child_action];
+                            // Cut Edge
+                            if (child_value > safe_range[1] || child_value < safe_range[0]) continue;
+                            if (int_goal - child_value > 32 && this_value !== 16) continue;
+                            if (child_value - int_goal > 30 && this_value !== -15) continue;
+
+                            let child_actions = parent_actions.concat(child_action);
+                            if (child_value == int_goal) {
+                                if (
+                                    (step_request[0] === 0 || global_template_actions_map[step_request[0]].includes(child_actions[child_actions.length - 1])) &&
+                                    (step_request[1] === 0 || global_template_actions_map[step_request[1]].includes(child_actions[child_actions.length - 2])) &&
+                                    (step_request[2] === 0 || global_template_actions_map[step_request[2]].includes(child_actions[child_actions.length - 3]))
+                                ) {
+                                    console.log("Find Path:" + child_actions.map(a => " " + global_actions_name_map[a]));
+                                    return doDrawPath(child_actions);
+                                }
+                            }
+
+                            child = {
+                                actions: child_actions,
+                                value: child_value
+                            };
+                            children.push(child);
+                        }
+                    }
+                    parents = children;
+                }
+            };
+
+            const doDrawPath = function(path) {
+                const path_div = document.getElementById("path");
+                path_div.innerHTML = "";
+                for (let i = 0; i < path.length; i++) {
+                    let action = path[i];
+                    let name = global_actions_name_map[action];
+                    let src = "./action/" + name + ".png";
+                    let img = document.createElement("img");
+                    img.src = src;
+                    path_div.appendChild(img);
+                }
+            };
             const doDetection = function(img) {
                 const Bin_Thr = 150;
                 const Min_Area = 30000;
@@ -126,28 +181,13 @@
                     return Math.round((x * Refined_Width) / _Dialog_Width);
                 }
                 const calIndicatorROIR = function() {
-                    return new cv.Rect(
-                        toRealPos(IBar_Start),
-                        toRealPos(103),
-                        toRealPos(IBar_Length),
-                        1
-                    );
+                    return new cv.Rect(toRealPos(IBar_Start), toRealPos(103), toRealPos(IBar_Length), 1);
                 };
                 const calIndicatorROIG = function() {
-                    return new cv.Rect(
-                        toRealPos(IBar_Start),
-                        toRealPos(111),
-                        toRealPos(IBar_Length),
-                        1
-                    );
+                    return new cv.Rect(toRealPos(IBar_Start), toRealPos(111), toRealPos(IBar_Length), 1);
                 };
                 const calStepROI = function(step) {
-                    return new cv.Rect(
-                        toRealPos(Step_X + Step_Inc * parseInt(step)),
-                        toRealPos(Step_Y),
-                        toRealPos(Step_D),
-                        toRealPos(Step_D)
-                    );
+                    return new cv.Rect(toRealPos(Step_X + Step_Inc * parseInt(step)), toRealPos(Step_Y), toRealPos(Step_D), toRealPos(Step_D));
                 };
 
                 let src = cv.imread(img);
@@ -159,13 +199,7 @@
 
                 let contours = new cv.MatVector();
                 let hierarchy = new cv.Mat();
-                cv.findContours(
-                    bin,
-                    contours,
-                    hierarchy,
-                    cv.RETR_EXTERNAL,
-                    cv.CHAIN_APPROX_SIMPLE
-                );
+                cv.findContours(bin, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
                 let b_rect;
                 for (let i = 0; i < contours.size(); ++i) {
                     let ct = contours.get(i);
@@ -174,12 +208,7 @@
                     let aspectRatio = rect.width / rect.height;
                     let rectArea = rect.width * rect.height;
                     let extent = area / rectArea;
-                    if (
-                        aspectRatio > Min_Asp &&
-                        aspectRatio < Max_Asp &&
-                        area > Min_Area &&
-                        extent > Min_Ext
-                    ) {
+                    if (aspectRatio > Min_Asp && aspectRatio < Max_Asp && area > Min_Area && extent > Min_Ext) {
                         b_rect = rect;
                         _Dialog_Width = rect.width;
                         break;
@@ -189,15 +218,12 @@
 
                 let dialog = bin.roi(b_rect);
                 let dialog_gray = gray.roi(b_rect);
-                cv.imshow("dialog", dialog);
+                cv.imshow("dialog", dialog_gray);
 
                 let indicatorROIR = calIndicatorROIR();
                 let indicatorR = dialog.roi(indicatorROIR);
                 let num_R = 0;
-                while (
-                    num_R < toRealPos(IBar_Length - 1) &&
-                    indicatorR.ucharPtr(0, num_R) == 255
-                ) {
+                while (num_R < toRealPos(IBar_Length - 1) && indicatorR.ucharPtr(0, num_R) == 255) {
                     num_R++;
                 }
                 cv.imshow("indicatorR", indicatorR);
@@ -205,11 +231,7 @@
                 let indicatorROIG = calIndicatorROIG();
                 let indicatorG = dialog.roi(indicatorROIG);
                 let num_G = 0;
-                while (
-                    num_G < toRealPos(IBar_Length - 1) &&
-                    indicatorG.ucharPtr(0, num_G) == 255
-                )
-                    num_G++;
+                while (num_G < toRealPos(IBar_Length - 1) && indicatorG.ucharPtr(0, num_G) == 255) num_G++;
                 cv.imshow("indicatorG", indicatorG);
 
                 let temp_size = new cv.Size(Step_Template_D, Step_Template_D);
@@ -217,24 +239,18 @@
                 let step_results = [-1, -1, -1];
                 for (let step = 0; step < 3; step++) {
                     img_steps[step] = dialog_gray.roi(calStepROI(step));
-                    cv.resize(img_steps[step], img_steps[step], temp_size);
+                    let resized_image = new cv.Mat();
+                    cv.resize(img_steps[step], resized_image, temp_size);
                     min_diff_value = 1145141919;
                     min_diff_index = -1;
-                    for (
-                        let temp_index = 0;
-                        temp_index < global_templates.length;
-                        temp_index++
-                    ) {
-                        let temp_diff = getGrayDiff(
-                            img_steps[step],
-                            global_templates[temp_index],
-                            temp_index
-                        );
+                    for (let temp_index = 0; temp_index < global_templates.length; temp_index++) {
+                        let temp_diff = getGrayDiff(resized_image, global_templates[temp_index]);
                         if (min_diff_value > temp_diff) {
                             min_diff_value = temp_diff;
                             min_diff_index = temp_index;
                         }
                     }
+                    resized_image.delete();
                     step_results[step] = min_diff_index;
                 }
                 cv.imshow("step0", img_steps[0]);
@@ -244,8 +260,12 @@
                 cv.imshow("rststep1", global_templates[step_results[1]]);
                 cv.imshow("rststep2", global_templates[step_results[2]]);
 
-                document.getElementById("rnum").innerHTML = toMcLength(num_R)
-                document.getElementById("gnum").innerHTML = toMcLength(num_G)
+                start = toMcLength(num_G);
+                goal = toMcLength(num_R);
+                document.getElementById("rnum").innerHTML = goal;
+                document.getElementById("gnum").innerHTML = start;
+
+                setTimeout(findPath, 0, start, goal, [0, 150], step_results);
 
                 src.delete();
                 gray.delete();
@@ -258,23 +278,15 @@
             };
 
             document.onpaste = function(event) {
-                var items = (
-                    event.clipboardData || event.originalEvent.clipboardData
-                ).items;
+                var items = (event.clipboardData || event.originalEvent.clipboardData).items;
                 for (index in items) {
                     var item = items[index];
                     if (item.kind === "file") {
                         var blob = item.getAsFile();
                         var reader = new FileReader();
                         reader.onload = function(event) {
-                            document
-                                .getElementById("img")
-                                .setAttribute("src", event.target.result);
-                            setTimeout(
-                                doDetection,
-                                0,
-                                document.getElementById("img")
-                            );
+                            document.getElementById("img").setAttribute("src", event.target.result);
+                            setTimeout(doDetection, 0, document.getElementById("img"));
                         };
                         reader.readAsDataURL(blob);
                     }
