@@ -4,7 +4,7 @@
         <meta charset="UTF-8" />
         <title>TFCSmithCalculator</title>
         <style>
-            #img {
+            .hidden {
                 display: none;
             }
             #raw {
@@ -26,17 +26,20 @@
                 height: 24px;
                 border: 2px green solid;
             }
-            #step0 {
+            #step0,
+            #rststep0 {
                 width: 80px;
                 height: 80px;
                 border: 2px red solid;
             }
-            #step1 {
+            #step1,
+            #rststep1 {
                 width: 80px;
                 height: 80px;
                 border: 2px orangered solid;
             }
-            #step2 {
+            #step2,
+            #rststep2 {
                 width: 80px;
                 height: 80px;
                 border: 2px orange solid;
@@ -47,16 +50,60 @@
         <h1>TFCSmithCalculator</h1>
         <h2>Ctrl(Cmd) + V to paste a TFC ScreenShot</h2>
         <h2 id="cv2">Waiting for opencv.js</h2>
-        <img id="img" /> <br />
+        <img class="hidden" id="img" />
+        <img class="hidden" id="Bend" src="./template/Bend.png" />
+        <img class="hidden" id="Draw" src="./template/Draw.png" />
+        <img class="hidden" id="Hit" src="./template/Hit.png" />
+        <img class="hidden" id="Punch" src="./template/Punch.png" />
+        <img class="hidden" id="Shrink" src="./template/Shrink.png" />
+        <img class="hidden" id="Upset" src="./template/Upset.png" />
+        <img class="hidden" id="Any" src="./template/Any.png" />
         <canvas id="raw"></canvas> <br />
         <canvas id="dialog"></canvas> <br />
-        <canvas id="indicatorR"></canvas> <br />
-        <canvas id="indicatorG"></canvas> <br />
+        <canvas id="indicatorR"></canvas> <span id="rnum"></span></p><br />
+        <canvas id="indicatorG"></canvas> <span id="gnum"></span><br />
         <canvas id="step0"></canvas> <canvas id="step1"></canvas>
         <canvas id="step2"></canvas><br />
+        <canvas id="rststep0"></canvas> <canvas id="rststep1"></canvas>
+        <canvas id="rststep2"></canvas><br />
         <script src="https://docs.opencv.org/3.4.1/opencv.js"></script>
         <script>
-            var doDetection = function(img) {
+            const global_template_name_map = [
+                "Any",
+                "Bend",
+                "Draw",
+                "Hit",
+                "Punch",
+                "Shrink",
+                "Upset"
+            ];
+
+            const global_templates = [];
+            for (let temp_index in global_template_name_map) {
+                temp_temp = cv.imread(
+                    document.getElementById(
+                        global_template_name_map[temp_index]
+                    )
+                );
+                let temp_gray = new cv.Mat();
+                cv.cvtColor(temp_temp, temp_gray, cv.COLOR_RGBA2GRAY);
+                global_templates.push(temp_gray);
+            }
+
+            const getGrayDiff = function(img1, img2, temp_index) {
+                let diff = 0;
+                for (let i = 0; i < img1.data.length; i++) {
+                    diff +=
+                        (img1.data[i] - img2.data[i]) *
+                        (img1.data[i] - img2.data[i]);
+                }
+                if (temp_index == 0) {
+                    diff *= 10;
+                }
+                return diff;
+            };
+
+            const doDetection = function(img) {
                 const Bin_Thr = 150;
                 const Min_Area = 30000;
                 const Min_Asp = 1.7;
@@ -70,6 +117,7 @@
                 const Step_Y = 9;
                 const Step_X = 79;
                 const Step_D = 10;
+                const Step_Template_D = 20;
                 const Step_Inc = 19;
                 function toRealPos(x) {
                     return Math.round((x * _Dialog_Width) / Refined_Width);
@@ -164,16 +212,40 @@
                     num_G++;
                 cv.imshow("indicatorG", indicatorG);
 
-                let img_steps = [
-                    dialog_gray.roi(calStepROI(0)),
-                    dialog_gray.roi(calStepROI(1)),
-                    dialog_gray.roi(calStepROI(2))
-                ];
+                let temp_size = new cv.Size(Step_Template_D, Step_Template_D);
+                let img_steps = [null, null, null];
+                let step_results = [-1, -1, -1];
+                for (let step = 0; step < 3; step++) {
+                    img_steps[step] = dialog_gray.roi(calStepROI(step));
+                    cv.resize(img_steps[step], img_steps[step], temp_size);
+                    min_diff_value = 1145141919;
+                    min_diff_index = -1;
+                    for (
+                        let temp_index = 0;
+                        temp_index < global_templates.length;
+                        temp_index++
+                    ) {
+                        let temp_diff = getGrayDiff(
+                            img_steps[step],
+                            global_templates[temp_index],
+                            temp_index
+                        );
+                        if (min_diff_value > temp_diff) {
+                            min_diff_value = temp_diff;
+                            min_diff_index = temp_index;
+                        }
+                    }
+                    step_results[step] = min_diff_index;
+                }
                 cv.imshow("step0", img_steps[0]);
                 cv.imshow("step1", img_steps[1]);
                 cv.imshow("step2", img_steps[2]);
+                cv.imshow("rststep0", global_templates[step_results[0]]);
+                cv.imshow("rststep1", global_templates[step_results[1]]);
+                cv.imshow("rststep2", global_templates[step_results[2]]);
 
-                console.log(toMcLength(num_R), toMcLength(num_G));
+                document.getElementById("rnum").innerHTML = toMcLength(num_R)
+                document.getElementById("gnum").innerHTML = toMcLength(num_G)
 
                 src.delete();
                 gray.delete();
@@ -181,7 +253,6 @@
                 contours.delete();
                 hierarchy.delete();
                 dialog.delete();
-                dialog_gray.delete();
                 indicatorR.delete();
                 indicatorG.delete();
             };
