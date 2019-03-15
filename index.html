@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>TFCSmithCalculator</title>
+        <style>
+            #img {
+                display: none;
+            }
+            #raw {
+                height: 150px;
+                border: 1px black solid;
+            }
+            #dialog {
+                width: 410px;
+                height: 230px;
+                border: 1px yellow solid;
+            }
+            #indicatorR {
+                width: 600px;
+                height: 24px;
+                border: 1px red solid;
+            }
+            #indicatorG {
+                width: 600px;
+                height: 24px;
+                border: 1px green solid;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>TFCSmithCalculator</h1>
+        <h2>Ctrl(Cmd) + V to paste a TFC ScreenShot</h2>
+        <h2 id="cv2">Waiting for opencv.js</h2>
+        <img id="img" /> <br />
+        <canvas id="raw"></canvas> <br />
+        <canvas id="dialog"></canvas> <br />
+        <canvas id="indicatorR"></canvas> <br />
+        <canvas id="indicatorG"></canvas> <br />
+        <script src="https://docs.opencv.org/3.4.1/opencv.js"></script>
+        <script>
+            var doDetection = function(img) {
+                const Bin_Thr = 150;
+                const Min_Area = 30000;
+                const Min_Asp = 1.7;
+                const Max_Asp = 1.86;
+                const Min_Ext = 0.95;
+                const Ratio = 2 / 410;
+                let _Dialog_Width = -1;
+                const Refined_Width = 205;
+                const IBar_Length = 150;
+                const IBar_Start = 26;
+                function toRealPos(x) {
+                    return Math.round((x * _Dialog_Width) / Refined_Width);
+                }
+                function toMcLength(x) {
+                    return Math.round((x * Refined_Width) / _Dialog_Width);
+                }
+                const calIndicatorROIR = function() {
+                    return new cv.Rect(
+                        toRealPos(IBar_Start),
+                        toRealPos(103),
+                        toRealPos(IBar_Length),
+                        1
+                    );
+                };
+                const calIndicatorROIG = function() {
+                    return new cv.Rect(
+                        toRealPos(IBar_Start),
+                        toRealPos(111),
+                        toRealPos(IBar_Length),
+                        1
+                    );
+                };
+
+                let src = cv.imread(img);
+                cv.imshow("raw", src);
+                let gray = new cv.Mat();
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+                cv.threshold(gray, gray, Bin_Thr, 255, cv.THRESH_BINARY);
+
+                let contours = new cv.MatVector();
+                let hierarchy = new cv.Mat();
+                cv.findContours(
+                    gray,
+                    contours,
+                    hierarchy,
+                    cv.RETR_EXTERNAL,
+                    cv.CHAIN_APPROX_SIMPLE
+                );
+                let b_rect;
+                for (let i = 0; i < contours.size(); ++i) {
+                    let ct = contours.get(i);
+                    let area = cv.contourArea(ct);
+                    let rect = cv.boundingRect(ct);
+                    let aspectRatio = rect.width / rect.height;
+                    let rectArea = rect.width * rect.height;
+                    let extent = area / rectArea;
+                    if (
+                        aspectRatio > Min_Asp &&
+                        aspectRatio < Max_Asp &&
+                        area > Min_Area &&
+                        extent > Min_Ext
+                    ) {
+                        b_rect = rect;
+                        _Dialog_Width = rect.width;
+                        break;
+                    }
+                }
+                if (_Dialog_Width == -1) return;
+
+                let dialog = gray.roi(b_rect);
+                cv.imshow("dialog", dialog);
+
+                let indicatorROIR = calIndicatorROIR();
+                let indicatorR = dialog.roi(indicatorROIR);
+                let num_R = 0;
+                while (
+                    num_R < toRealPos(IBar_Length - 1) &&
+                    indicatorR.ucharPtr(0, num_R) == 255
+                ) {
+                    num_R++;
+                }
+                cv.imshow("indicatorR", indicatorR);
+
+                let indicatorROIG = calIndicatorROIG();
+                let indicatorG = dialog.roi(indicatorROIG);
+                let num_G = 0;
+                while (
+                    num_G < toRealPos(IBar_Length - 1) &&
+                    indicatorG.ucharPtr(0, num_G) == 255
+                )
+                    num_G++;
+                cv.imshow("indicatorG", indicatorG);
+
+                console.log(toMcLength(num_R), toMcLength(num_G));
+
+                src.delete();
+                gray.delete();
+                contours.delete();
+                hierarchy.delete();
+                dialog.delete();
+                indicatorR.delete();
+                indicatorG.delete();
+            };
+
+            document.onpaste = function(event) {
+                var items = (
+                    event.clipboardData || event.originalEvent.clipboardData
+                ).items;
+                for (index in items) {
+                    var item = items[index];
+                    if (item.kind === "file") {
+                        var blob = item.getAsFile();
+                        var reader = new FileReader();
+                        reader.onload = function(event) {
+                            document
+                                .getElementById("img")
+                                .setAttribute("src", event.target.result);
+                            setTimeout(
+                                doDetection,
+                                0,
+                                document.getElementById("img")
+                            );
+                        };
+                        reader.readAsDataURL(blob);
+                    }
+                }
+            };
+
+            document.getElementById("cv2").innerHTML = "opencv.js loaded!";
+        </script>
+    </body>
+</html>
