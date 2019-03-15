@@ -8,23 +8,38 @@
                 display: none;
             }
             #raw {
-                height: 150px;
-                border: 1px black solid;
+                height: 200px;
+                border: 2px black solid;
             }
             #dialog {
                 width: 410px;
                 height: 230px;
-                border: 1px yellow solid;
+                border: 2px yellow solid;
             }
             #indicatorR {
-                width: 600px;
+                width: 410px;
                 height: 24px;
-                border: 1px red solid;
+                border: 2px red solid;
             }
             #indicatorG {
-                width: 600px;
+                width: 410px;
                 height: 24px;
-                border: 1px green solid;
+                border: 2px green solid;
+            }
+            #step0 {
+                width: 80px;
+                height: 80px;
+                border: 2px red solid;
+            }
+            #step1 {
+                width: 80px;
+                height: 80px;
+                border: 2px orangered solid;
+            }
+            #step2 {
+                width: 80px;
+                height: 80px;
+                border: 2px orange solid;
             }
         </style>
     </head>
@@ -37,6 +52,8 @@
         <canvas id="dialog"></canvas> <br />
         <canvas id="indicatorR"></canvas> <br />
         <canvas id="indicatorG"></canvas> <br />
+        <canvas id="step0"></canvas> <canvas id="step1"></canvas>
+        <canvas id="step2"></canvas><br />
         <script src="https://docs.opencv.org/3.4.1/opencv.js"></script>
         <script>
             var doDetection = function(img) {
@@ -50,6 +67,10 @@
                 const Refined_Width = 205;
                 const IBar_Length = 150;
                 const IBar_Start = 26;
+                const Step_Y = 9;
+                const Step_X = 79;
+                const Step_D = 10;
+                const Step_Inc = 19;
                 function toRealPos(x) {
                     return Math.round((x * _Dialog_Width) / Refined_Width);
                 }
@@ -72,17 +93,26 @@
                         1
                     );
                 };
+                const calStepROI = function(step) {
+                    return new cv.Rect(
+                        toRealPos(Step_X + Step_Inc * parseInt(step)),
+                        toRealPos(Step_Y),
+                        toRealPos(Step_D),
+                        toRealPos(Step_D)
+                    );
+                };
 
                 let src = cv.imread(img);
                 cv.imshow("raw", src);
                 let gray = new cv.Mat();
+                let bin = new cv.Mat();
                 cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-                cv.threshold(gray, gray, Bin_Thr, 255, cv.THRESH_BINARY);
+                cv.threshold(gray, bin, Bin_Thr, 255, cv.THRESH_BINARY);
 
                 let contours = new cv.MatVector();
                 let hierarchy = new cv.Mat();
                 cv.findContours(
-                    gray,
+                    bin,
                     contours,
                     hierarchy,
                     cv.RETR_EXTERNAL,
@@ -109,7 +139,8 @@
                 }
                 if (_Dialog_Width == -1) return;
 
-                let dialog = gray.roi(b_rect);
+                let dialog = bin.roi(b_rect);
+                let dialog_gray = gray.roi(b_rect);
                 cv.imshow("dialog", dialog);
 
                 let indicatorROIR = calIndicatorROIR();
@@ -133,13 +164,24 @@
                     num_G++;
                 cv.imshow("indicatorG", indicatorG);
 
+                let img_steps = [
+                    dialog_gray.roi(calStepROI(0)),
+                    dialog_gray.roi(calStepROI(1)),
+                    dialog_gray.roi(calStepROI(2))
+                ];
+                cv.imshow("step0", img_steps[0]);
+                cv.imshow("step1", img_steps[1]);
+                cv.imshow("step2", img_steps[2]);
+
                 console.log(toMcLength(num_R), toMcLength(num_G));
 
                 src.delete();
                 gray.delete();
+                bin.delete();
                 contours.delete();
                 hierarchy.delete();
                 dialog.delete();
+                dialog_gray.delete();
                 indicatorR.delete();
                 indicatorG.delete();
             };
