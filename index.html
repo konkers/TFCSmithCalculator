@@ -14,9 +14,13 @@
             border: 2px black solid;
         }
 
+        #tmp {
+            height: 200px;
+            border: 2px black solid;
+        }
+
         #dialog {
-            width: 410px;
-            height: 230px;
+            height: 300px;
             border: 2px yellow solid;
         }
 
@@ -67,13 +71,7 @@
     <h2>Ctrl(Cmd) + V to paste a TFC ScreenShot</h2>
     <h2 id="cv2">Waiting for opencv.js</h2>
     <img class="hidden" id="img" />
-    <img class="hidden" id="Bend" src="./template/Bend.png" />
-    <img class="hidden" id="Draw" src="./template/Draw.png" />
-    <img class="hidden" id="Hit" src="./template/Hit.png" />
-    <img class="hidden" id="Punch" src="./template/Punch.png" />
-    <img class="hidden" id="Shrink" src="./template/Shrink.png" />
-    <img class="hidden" id="Upset" src="./template/Upset.png" />
-    <img class="hidden" id="Any" src="./template/Any.png" />
+    <img class="hidden" id="gui" src="./anvil.png" />
     <canvas id="raw"></canvas> <br />
     <canvas id="dialog"></canvas> <br />
     <canvas id="indicatorR"></canvas> <span id="rnum"></span><br />
@@ -81,13 +79,24 @@
     <canvas id="step0"></canvas> <canvas id="step1"></canvas> <canvas id="step2"></canvas><br />
     <canvas id="rststep0"></canvas> <canvas id="rststep1"></canvas> <canvas id="rststep2"></canvas><br />
     <span id="path"></span>
-    <script src="https://docs.opencv.org/3.4.1/opencv.js"></script>
+    <script src="./opencv.js"></script>
     <script>
         const global_template_name_map = ["Any", "Hit", "Draw", "Punch", "Bend", "Upset", "Shrink"];
 
         const global_actions_name_map = ["Hit_Light", "Hit_Medium", "Hit_Heavy", "Draw", "Punch", "Bend", "Upset", "Shrink"];
 
         const global_actions_values = [-3, -6, -9, -15, 2, 7, 13, 16];
+
+        const action_positions = [
+            [0, 0], // Any  TODO: find position
+            [218, 18], // Hit
+            [224, 224], // Draw
+            [0, 224], // Punch
+            [32, 224], // Bend
+            [64, 224], // Upset
+            [96, 224], // Shrink
+        ];
+
 
         const global_template_actions_map = [
             [0, 1, 2, 3, 4, 5, 6, 7],
@@ -98,14 +107,6 @@
             [6],
             [7]
         ];
-
-        const global_templates = [];
-        for (let temp_index in global_template_name_map) {
-            temp_temp = cv.imread(document.getElementById(global_template_name_map[temp_index]));
-            let temp_gray = new cv.Mat();
-            cv.cvtColor(temp_temp, temp_gray, cv.COLOR_RGBA2GRAY);
-            global_templates.push(temp_gray);
-        }
 
         const getGrayDiff = function (img1, img2, temp_index) {
             let diff = 0;
@@ -120,7 +121,6 @@
             let int_goal = parseInt(goal);
 
             for (let i = 0; i < 15; i++) {
-                console.log(i);
                 let children = [];
                 for (let parent_index = 0; parent_index < parents.length; parent_index++) {
                     const parent_actions = parents[parent_index].actions;
@@ -168,33 +168,35 @@
                 path_div.appendChild(img);
             }
         };
+
         const doDetection = function (img) {
             const Bin_Thr = 150;
             const Min_Area = 30000;
-            const Min_Asp = 1.7;
-            const Max_Asp = 1.86;
+            const Min_Asp = 0.84
+            const Max_Asp = 0.86;
             const Min_Ext = 0.95;
             const Ratio = 2 / 410;
-            let _Dialog_Width = -1;
-            const Refined_Width = 205;
+            const Dialog_Width = 176;
+            const Dialog_Height = 207;
             const IBar_Length = 150;
-            const IBar_Start = 26;
-            const Step_Y = 9;
-            const Step_X = 79;
+            const IBar_Start = 13;
+            const Step_Y = 10;
+            const Step_X = 64;
             const Step_D = 10;
-            const Step_Template_D = 20;
+            const Step_Template_D = 32;
             const Step_Inc = 19;
+            let scale = 1;
             function toRealPos(x) {
-                return Math.round((x * _Dialog_Width) / Refined_Width);
+                return x * scale;
             }
             function toMcLength(x) {
-                return Math.round((x * Refined_Width) / _Dialog_Width);
+                return x / scale;
             }
             const calIndicatorROIR = function () {
-                return new cv.Rect(toRealPos(IBar_Start), toRealPos(103), toRealPos(IBar_Length), 1);
+                return new cv.Rect(toRealPos(IBar_Start), toRealPos(95), toRealPos(IBar_Length), 1);
             };
             const calIndicatorROIG = function () {
-                return new cv.Rect(toRealPos(IBar_Start), toRealPos(111), toRealPos(IBar_Length), 1);
+                return new cv.Rect(toRealPos(IBar_Start), toRealPos(103), toRealPos(IBar_Length), 1);
             };
             const calStepROI = function (step) {
                 return new cv.Rect(toRealPos(Step_X + Step_Inc * parseInt(step)), toRealPos(Step_Y), toRealPos(Step_D), toRealPos(Step_D));
@@ -211,6 +213,7 @@
             let hierarchy = new cv.Mat();
             cv.findContours(bin, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
             let b_rect;
+            let found = false;
             for (let i = 0; i < contours.size(); ++i) {
                 let ct = contours.get(i);
                 let area = cv.contourArea(ct);
@@ -220,14 +223,27 @@
                 let extent = area / rectArea;
                 if (aspectRatio > Min_Asp && aspectRatio < Max_Asp && area > Min_Area && extent > Min_Ext) {
                     b_rect = rect;
-                    _Dialog_Width = rect.width;
+                    found = true;
                     break;
                 }
             }
-            if (_Dialog_Width == -1) return;
 
-            let dialog = bin.roi(b_rect);
-            let dialog_gray = gray.roi(b_rect);
+            if (!found) {
+                console.log("dialog not found")
+                return;
+            }
+
+            // Assume that gui_scale is integral
+            scale = Math.round(b_rect.width / Dialog_Width);
+            let dialog_rect = new cv.Rect(
+                (Math.round(b_rect.x / scale) - 1) * scale,
+                (Math.round(b_rect.y / scale) - 1) * scale,
+                Dialog_Width * scale,
+                Dialog_Height * scale
+            );
+
+            let dialog = bin.roi(dialog_rect);
+            let dialog_gray = gray.roi(dialog_rect);
             cv.imshow("dialog", dialog_gray);
 
             let indicatorROIR = calIndicatorROIR();
@@ -247,6 +263,25 @@
             let temp_size = new cv.Size(Step_Template_D, Step_Template_D);
             let img_steps = [null, null, null];
             let step_results = [-1, -1, -1];
+
+            // Read templates from TFC's anvil.js.
+            const global_templates = [];
+            gui = cv.imread(document.getElementById("gui"), cv.IMREAD_UNCHANGED);
+            let icon_bg = new cv.Mat(Step_Template_D, Step_Template_D, cv.CV_8UC4, new cv.Scalar(0x3c, 0x3c, 0x3c, 0xff));
+            for (let temp_index in global_template_name_map) {
+                let pos = action_positions[temp_index];
+                let icon_roi = gui.roi(new cv.Rect(pos[0], pos[1], Step_Template_D, Step_Template_D));
+                let composited_icon = new cv.Mat();
+                cv.add(icon_bg, icon_roi, composited_icon);
+
+                let composited_icon_grey = new cv.Mat();
+                cv.cvtColor(composited_icon, composited_icon_grey, cv.COLOR_RGBA2GRAY);
+
+                //let icon = new cv.Mat();
+                global_templates.push(composited_icon_grey);
+            }
+            icon_bg.delete();
+
             for (let step = 0; step < 3; step++) {
                 img_steps[step] = dialog_gray.roi(calStepROI(step));
                 let resized_image = new cv.Mat();
@@ -285,6 +320,7 @@
             dialog.delete();
             indicatorR.delete();
             indicatorG.delete();
+            gui.delete();
         };
 
         document.onpaste = function (event) {
